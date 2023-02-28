@@ -5,13 +5,12 @@ results_long <-
   inner_join(
     results %>%
       unnest(metric_values) %>%
-      gather(metric_id, value, any_of(metric_info$metric_id)) %>%
+      gather(metric_id, value, one_of(metric_info$metric_id)) %>%
       mutate(value = ifelse(is.na(value), NA_real_, value)) %>%
       select(method_id, dataset_id, metric_id, value),
     results %>%
       unnest(scaled_scores) %>%
-      gather(metric_id, score, any_of(metric_info$metric_id)) %>%
-      mutate(score = ifelse(is.na(score), NA_real_, score)) %>%
+      gather(metric_id, score, one_of(metric_info$metric_id)) %>%
       select(method_id, dataset_id, metric_id, score),
     by = c("method_id", "dataset_id", "metric_id")
   ) %>%
@@ -21,7 +20,7 @@ results_long <-
 
 overall_ranking <- results_long %>%
   group_by(method_id) %>%
-  summarise(mean_score = mean(score)) %>%
+  summarise(mean_score = mean(score %|% 0)) %>%
   arrange(desc(mean_score))
 
 # order by ranking
@@ -34,12 +33,12 @@ results_long$method_id <- factor(results_long$method_id, levels = rev(overall_ra
 #| warning: false
 per_dataset <- results_long %>%
   group_by(method_id, dataset_id) %>%
-  summarise(score = mean(score), .groups = "drop") %>%
+  summarise(score = mean(score %|% 0), .groups = "drop") %>%
   mutate(dataset_id = paste0("dataset_", dataset_id)) %>%
   spread(dataset_id, score)
 per_metric <- results_long %>%
   group_by(method_id, metric_id) %>%
-  summarise(score = mean(score), .groups = "drop") %>%
+  summarise(score = mean(score %|% 0), .groups = "drop") %>%
   mutate(metric_id = paste0("metric_", metric_id)) %>%
   spread(metric_id, score)
 
