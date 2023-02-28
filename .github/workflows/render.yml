@@ -1,65 +1,69 @@
-name: Render website
 on:
   push:
-    branches:
-    - '**'
 
-permissions:
-  contents: write
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+name: Render and deploy to Netlify
 
 jobs:
-  render:
+  build-deploy:
     runs-on: ubuntu-latest
+    
+    env:
+      BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+      RENV_PATHS_ROOT: ~/.local/share/renv
 
     steps:
-
       - uses: actions/checkout@v3
-        with:
-          fetch-depth: 1
 
       - uses: r-lib/actions/setup-r@v2
-      - uses: r-lib/actions/setup-renv@v2
-
-      - uses: quarto-dev/quarto-actions/setup@v2
         with:
-          version: 0.3.71
+          r-version: "4.2"
+          use-public-rspm: true
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - uses: r-lib/actions/setup-renv@v2
+          
+      - name: Install Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
 
       - uses: peaceiris/actions-hugo@v2
         with:
           hugo-version: '0.110.0'
           extended: true
 
-      - name: Install R packages
-        run: |
-          renv::install("rmarkdown")
-        shell: Rscript {0}
-
-      - uses: quarto-dev/quarto-actions/render@v2
-        with: 
-          to: commonmark
-          path: content/benchmarks
+      # using python script for now
+      # - uses: quarto-dev/quarto-actions/render@v2
+      - name: Render pages
+        run: python content/benchmarks/_generate_task_pages.py
 
       - name: Build
         run: hugo --gc --minify
 
-      - name: Commit files
-        if: startsWith(github.ref, 'refs/heads')
-        run: |
-          if [[ `git status --porcelain` ]]; then
-            git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git config --local user.name "github-actions[bot]"
-            git add .
-            git commit -m "quarto render"
-          fi
-        shell: bash -e {0}
-
-      - name: Push changes
-        if: startsWith(github.ref, 'refs/heads')
-        uses: ad-m/github-push-action@master
+      - name: Publish
+        uses: netlify/actions/cli@master
+        if: github.ref == 'refs/heads/main'
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ github.ref }}
+          args: deploy --prod --dir=public
+        env:
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }} --message "PR deploy ${{ github.ref }}"
+
+      - name: Publish preview
+        uses: netlify/actions/cli@master
+        if: github.ref != 'refs/heads/main'
+        with:
+          args: deploy --dir=public --alias ${{ env.BRANCH_NAME }} --message "PR deploy ${{ github.ref }}"
+        env:
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+
+      - name: Status check
+        if: github.ref != 'refs/heads/main'
+        uses: Sibz/github-status-action@v1.1.6
+        with:
+          authToken: ${{ secrets.GITHUB_TOKEN }}
+          context: Netlify preview
+          state: success
+          target_url: https://${{ env.BRANCH_NAME }}--data-intuitive.netlify.app
