@@ -158,3 +158,5 @@ go.sum
 
 /.quarto/
 assets/jsconfig.json
+
+_freeze
